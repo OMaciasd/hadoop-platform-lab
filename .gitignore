@@ -1,0 +1,27 @@
+# Datos de laboratorio (persistencia local, no versionar)
+data/
+!data/.gitkeep
+
+# Entorno local
+.env
+*.env.local
+!.env.example
+
+# Reportes / artefactos de validación
+*.log
+*.pid
+*.tmp
+
+# Dependencias y caché
+node_modules/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.venv/
+
+# SO / editores
+.DS_Store
+.idea/
+.vscode/
+*.swp
