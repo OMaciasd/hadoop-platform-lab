@@ -36,9 +36,15 @@ Principio rector: **DESCUBRIR → DISEÑAR → IMPLEMENTAR → VALIDAR**
   └──────────────────────┘      │   ┌──────────────────────────────────────┐    │   │
                                 │   │ client (HDFS CLI + YARN CLI + Spark) │    │   │
                                 │   └──────────────────────────────────────┘    │   │
+                                │   ┌──────────────────────────────────────┐    │   │
+                                │   │ metrics  JMX → Prometheus   :9871    │    │   │
+                                │   │  lee /jmx internos, sirve /metrics   │    │   │
+                                │   └──────────────────────────────────────┘    │   │
                                 └──────────────────────────────────────────────┘
 
- (*1) job de scrape provisto en observability/ — requiere cambio en gcp-architecture-lab: NO ejecutado.
+ (*1) job de scrape provisto en observability/prometheus/ — requiere tocar
+      gcp-architecture-lab: NO ejecutado. El exportador :9871 sí forma parte
+      de este stack (healthy); solo falta decirle al Prometheus vecino que lo mire.
  (*2) standalone existente NO se duplica; este laboratorio usa Spark sobre YARN.
  (*3) candidato natural para el loop periódico de validación — requiere DAG en data-eng-lab: NO ejecutado.
 ```
@@ -54,6 +60,7 @@ Principio rector: **DESCUBRIR → DISEÑAR → IMPLEMENTAR → VALIDAR**
 | `nodemanager1` | `apache/hadoop:3.4.3` | YARN NodeManager | `8042` | `/ws/v1/node/info` |
 | `nodemanager2` | `apache/hadoop:3.4.3` | YARN NodeManager | `8043`→8042 | igual |
 | `client` | build local (`Dockerfile.client`) | CLI HDFS/YARN + Spark 3.5.3 sobre YARN | — | — |
+| `metrics` | build local (`Dockerfile.exporter`) | exportador JMX → Prometheus | `9871` `/metrics` | `GET /health` |
 
 Decisiones:
 
@@ -68,16 +75,21 @@ Decisiones:
 
 ## 4. Recursos y límites
 
-| Servicio | memoria_reservation | memoria límite | vcores |
+| Servicio | memoria_reservation | memoria límite | cpus |
 |---|---|---|---|
-| namenode | 512M | 1G | 2 |
-| datanode1/2 | 512M | 1G | 2 |
-| resourcemanager | 512M | 1G | 2 |
-| nodemanager1/2 | 512M | 1536M | 4 |
+| namenode | 512M | 1G | 1 |
+| datanode1/2 | 512M | 1G | 1 |
+| resourcemanager | 512M | 1G | 1 |
+| nodemanager1/2 | 1G | 3G | 2 |
+| client | 256M | 1G | 1 |
+| metrics | 32M | 64M | 0.25 |
 
 `yarn.nodemanager.resource.memory-mb=1536`, `yarn.nodemanager.resource.vcores=4`
-→ techo YARN de 3 GiB / 8 vcores, sin estrangular los ~6 GiB que ya usan los
-otros proyectos (quedan ~23 GiB libres, ver inventario).
+→ techo YARN de **3072 MB / 4 vcores** por nodo. Los contenedores NM admiten
+3 GB para que el heap de YARN más los contenedores de aplicación quepan dentro
+del límite: el techo efectivo de YARN lo fija `yarn-site.xml`, no el contenedor.
+Uso observado del stack completo: ~2.5 GB, quedando ~20 GiB libres para el
+resto de proyectos (inventario §2).
 
 ## 5. Red y puertos
 
@@ -85,7 +97,9 @@ otros proyectos (quedan ~23 GiB libres, ver inventario).
   (verificada libre frente a las 10 redes existentes, ver inventario §5).
 - No se conecta a ninguna red de otro proyecto → cero riesgo de romper vecinos.
 - Puertos del host verificados libres antes de asignarlos
-  (`scripts/inventory/ports.sh`): 8020, 8042, 8043, 8088, 9864, 9865, 9870, 4040.
+  (`scripts/inventory/ports.sh`): 8020, 8042, 8043, 8088, 9864, 9865, 9870 y 9871
+  (exportador). `LAB_PORTS` en `scripts/lib/common.sh` es la lista única que
+  comparten inventario, `up.sh` y la validación.
 - `8082` (ocupado por evolution-api) y `3000` (waha) se evitan explícitamente.
 
 ## 6. Persistencia
@@ -94,8 +108,9 @@ Prioridad del encargo: volúmenes Docker > filesystem local > servicios existent
 
 | Dato | Mecanismo | Sobrevive a |
 |---|---|---|
-| fsimage/edits (NameNode) | volumen `hadoop_lab_namenode` | recreate, down, reboot |
-| bloques (DataNode 1/2) | volúmenes `hadoop_lab_datanode1/2` | idem |
+| fsimage/edits (NameNode) | bind `./data/namenode/` | recreate, down, reboot |
+| bloques (DataNode 1/2) | bind `./data/datanode1/`, `./data/datanode2/` | idem |
+| directorios locales YARN | bind `./data/yarn/nm1`, `./data/yarn/nm2` | idem |
 | logs Hadoop | bind `./data/logs/<servicio>/` | auditable desde el host |
 | reportes de validación | bind `./data/reports/`, `./data/metrics/` | idem |
 | estado de inventario | bind `./data/inventory/` | idem |
@@ -110,6 +125,8 @@ no código).
 `componente → dependencia → conectividad → servicio → registro → fallo puntual → siguiente`
 
 - Estados: `PASS`, `FAIL`, `DEGRADED`, `NOT_CONFIGURED`.
+- Códigos de salida: `0` sin incidencias, `1` algún `FAIL`, `2` error de uso
+  (argumentos o dependencias de selección), `3` sin `FAIL` pero con `DEGRADED`.
 - Cada check tiene timeout propio; el script **siempre termina** (sin `--loop`:
   1 iteración; con `--loop N --interval S`: N iteraciones, N ≤ configurable,
   nunca infinito por defecto).
@@ -124,7 +141,8 @@ no código).
 | Capa | Mecanismo | ¿Reutiliza infra existente? |
 |---|---|---|
 | Health de contenedor | `healthcheck` Docker por servicio | no aplica (propio) |
-| Métricas Hadoop | JMX de NN/RM/DN (`/jmx`, `/ws/v1/cluster/metrics`) | expuestas a cualquier scraper |
+| Métricas Hadoop | JMX de NN/RM/DN/NM (`/jmx`, JSON) | expuestas a cualquier scraper |
+| Exportador | contenedor `hl-metrics` (`:9871/metrics`, solo stdlib de Python) | ✅ propio |
 | Scraping | **Prometheus existente** (`:9091`) | ✅ provisto en `observability/` (no aplicado: toca otro repo) |
 | Dashboards | **Grafana existente** (`:3001`) | ✅ dashboard provisto para importar (no aplicado) |
 | Logs | ficheros en `./data/logs` + `scripts/diagnostics/logs.sh` | filesystem local compartible |
@@ -142,6 +160,8 @@ hadoop-platform-lab/
 ├── .env.example                 # variables (sin secretos reales)
 ├── config/hadoop/               # core-site, hdfs-site, yarn-site, log4j
 ├── docker/Dockerfile.client     # cliente HDFS/YARN + Spark sobre YARN
+├── docker/Dockerfile.exporter   # exportador JMX → Prometheus (python:3.13-alpine)
+├── docker/exporter.py           # lógica del exportador (GET /metrics, --once)
 ├── scripts/
 │   ├── lib/common.sh            # colores, logging, timeouts, esperas
 │   ├── inventory/               # system.sh docker.sh ports.sh run.sh

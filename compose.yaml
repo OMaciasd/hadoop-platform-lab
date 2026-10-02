@@ -1,0 +1,299 @@
+# =====================================================================
+# hadoop-platform-lab — compose.yaml
+#
+# Clúster Hadoop multiproceso (HDFS + YARN) + cliente Spark-on-YARN.
+# Red propia y explícita: hadoop_lab (172.28.0.0/16, verificada libre).
+# Puertos del host verificados con scripts/inventory/ports.sh.
+#
+# USO: ./scripts/lab/up.sh  (crea ./data con los permisos correctos)
+#      ./scripts/lab/down.sh
+#
+# El directorio ./data debe existir y ser propiedad del usuario actual:
+# Docker crea los bind mounts como root si faltan, y el daemon hadoop
+# (uid 1000) no podría escribir. up.sh se encarga de ello.
+# =====================================================================
+name: hadoop-platform-lab
+
+x-hadoop-common: &hadoop-common
+  image: apache/hadoop:3.4.3
+  restart: unless-stopped
+  init: true
+  networks:
+    - hadoop_lab
+  environment: &hadoop-env
+    HADOOP_CONF_DIR: /opt/lab/conf
+    HADOOP_LOG_DIR: /hadoop/logs
+    HADOOP_CLUSTER_ID: ${HADOOP_CLUSTER_ID:-hadoop-platform-lab-001}
+    TZ: ${TZ:-UTC}
+  volumes:
+    - ./config/hadoop:/opt/lab/conf:ro
+    - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+  entrypoint: ["/bin/bash", "/opt/lab/entrypoint.sh"]
+  healthcheck:
+    test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/${HADOOP_HEALTH_PORT:-9870}'"]
+    interval: 15s
+    timeout: 5s
+    retries: 6
+    start_period: 30s
+
+services:
+  # ---------------------------------------------------------------- HDFS
+  namenode:
+    <<: *hadoop-common
+    hostname: namenode
+    container_name: hl-namenode
+    command: ["hdfs", "namenode"]
+    environment:
+      <<: *hadoop-env
+      CLUSTER_ROLE: namenode
+      HADOOP_HEALTH_PORT: "9870"
+    ports:
+      - "9870:9870"   # NameNode Web UI / JMX / WebHDFS
+      - "8020:8020"   # NameNode RPC
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/namenode:/hadoop/dfs/name
+      - ./data/logs/namenode:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 1g, cpus: "1.0" }
+        reservations: { memory: 512m }
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -safemode get"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 45s
+
+  datanode1:
+    <<: *hadoop-common
+    hostname: datanode1
+    container_name: hl-datanode1
+    command: ["hdfs", "datanode"]
+    depends_on:
+      namenode:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-env
+      CLUSTER_ROLE: datanode
+      WAITFOR: "namenode:8020"
+      HADOOP_HEALTH_PORT: "9864"
+    ports:
+      - "9864:9864"   # DataNode Web UI / WebHDFS data
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/datanode1:/hadoop/dfs/data
+      - ./data/logs/datanode1:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 1g, cpus: "1.0" }
+        reservations: { memory: 512m }
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report | grep -q \"Hostname: $(hostname)\""]
+      interval: 15s
+      timeout: 15s
+      retries: 8
+      start_period: 60s
+
+  datanode2:
+    <<: *hadoop-common
+    hostname: datanode2
+    container_name: hl-datanode2
+    command: ["hdfs", "datanode"]
+    depends_on:
+      namenode:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-env
+      CLUSTER_ROLE: datanode
+      WAITFOR: "namenode:8020"
+      HADOOP_HEALTH_PORT: "9864"
+    ports:
+      - "9865:9864"   # DataNode Web UI (2º nodo; interno sigue en 9864)
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/datanode2:/hadoop/dfs/data
+      - ./data/logs/datanode2:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 1g, cpus: "1.0" }
+        reservations: { memory: 512m }
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report | grep -q \"Hostname: $(hostname)\""]
+      interval: 15s
+      timeout: 15s
+      retries: 8
+      start_period: 60s
+
+  # ---------------------------------------------------------------- YARN
+  resourcemanager:
+    <<: *hadoop-common
+    hostname: resourcemanager
+    container_name: hl-resourcemanager
+    command: ["yarn", "resourcemanager"]
+    depends_on:
+      namenode:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-env
+      CLUSTER_ROLE: resourcemanager
+      WAITFOR: "namenode:8020"
+      HADOOP_HEALTH_PORT: "8088"
+    ports:
+      - "8088:8088"   # ResourceManager Web UI / REST
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/logs/resourcemanager:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 1g, cpus: "1.0" }
+        reservations: { memory: 512m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/ws/v1/cluster/info | grep -q state.:.STARTED"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 45s
+
+  nodemanager1:
+    <<: *hadoop-common
+    hostname: nodemanager1
+    container_name: hl-nodemanager1
+    command: ["yarn", "nodemanager"]
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-env
+      CLUSTER_ROLE: nodemanager
+      WAITFOR: "resourcemanager:8031"
+      HADOOP_HEALTH_PORT: "8042"
+    ports:
+      - "8042:8042"   # NodeManager Web UI / REST
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/yarn/nm1/local:/hadoop/yarn/local
+      - ./data/yarn/nm1/logs:/hadoop/yarn/logs
+      - ./data/logs/nodemanager1:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 3g, cpus: "2.0" }
+        reservations: { memory: 1g }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8042/ws/v1/node/info | grep -q nodeHealthy.:true"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+
+  nodemanager2:
+    <<: *hadoop-common
+    hostname: nodemanager2
+    container_name: hl-nodemanager2
+    command: ["yarn", "nodemanager"]
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-env
+      CLUSTER_ROLE: nodemanager
+      WAITFOR: "resourcemanager:8031"
+      HADOOP_HEALTH_PORT: "8042"
+    ports:
+      - "8043:8042"   # NodeManager Web UI (2º nodo)
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/yarn/nm2/local:/hadoop/yarn/local
+      - ./data/yarn/nm2/logs:/hadoop/yarn/logs
+      - ./data/logs/nodemanager2:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 3g, cpus: "2.0" }
+        reservations: { memory: 1g }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8042/ws/v1/node/info | grep -q nodeHealthy.:true"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+
+  # ----------------------------------------------------------- CLIENTE
+  # CLI de HDFS/YARN + Spark 3.5.3 en modo YARN (sin duplicar el Spark
+  # standalone que ya corre en azure-data-engineering-lab).
+  client:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.client
+    image: hadoop-platform-lab-client:0.1.0
+    hostname: client
+    container_name: hl-client
+    restart: unless-stopped
+    init: true
+    networks:
+      - hadoop_lab
+    environment:
+      HADOOP_CONF_DIR: /opt/lab/conf
+      HADOOP_LOG_DIR: /hadoop/logs
+      CLUSTER_ROLE: client
+      TZ: ${TZ:-UTC}
+    entrypoint: ["/bin/bash", "/opt/lab/entrypoint.sh"]
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./config/hadoop:/opt/lab/conf:ro
+      - ./docker/entrypoint.sh:/opt/lab/entrypoint.sh:ro
+      - ./data/logs/client:/hadoop/logs
+    deploy:
+      resources:
+        limits: { memory: 1g, cpus: "1.0" }
+        reservations: { memory: 256m }
+    healthcheck:
+      test: ["CMD-SHELL", "test -x /opt/spark/bin/spark-submit && hdfs version >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 20s
+
+  # ------------------------------------------------- EXPORTADOR JMX→Prom
+  # Hadoop publica métricas como JSON en /jmx; este servicio las convierte
+  # a formato Prometheus en :9871/metrics para poder scrapearlas desde el
+  # Prometheus existente (ver observability/README.md). Sin dependencias:
+  # python stdlib. No lee credenciales y solo hace GET a los /jmx internos.
+  metrics:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.exporter
+    image: hadoop-platform-lab-exporter:0.1.0
+    container_name: hl-metrics
+    restart: unless-stopped
+    init: true
+    networks:
+      - hadoop_lab
+    environment:
+      TZ: ${TZ:-UTC}
+    ports:
+      - "9871:9871"   # Exportador Prometheus (GET /metrics, /health)
+    deploy:
+      resources:
+        limits: { memory: 64m, cpus: "0.25" }
+        reservations: { memory: 32m }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9871/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  hadoop_lab:
+    name: hadoop_lab
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1

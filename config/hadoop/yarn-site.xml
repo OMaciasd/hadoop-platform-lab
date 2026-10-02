@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  yarn-site.xml — hadoop-platform-lab
+  2 NodeManagers x 1536 MB / 4 vcores = techo YARN de 3 GB y 8 vcores
+  (el NodeManager necesita margen propio para su JVM fuera de ese techo).
+  Ajustado a los ~23 GiB libres del host (ver docs/local-inventory.md §9).
+-->
+<configuration>
+  <!-- ResourceManager -->
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>resourcemanager</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.address</name>
+    <value>resourcemanager:8032</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.scheduler.address</name>
+    <value>resourcemanager:8030</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.resource-tracker.address</name>
+    <value>resourcemanager:8031</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.admin.address</name>
+    <value>resourcemanager:8035</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.webapp.address</name>
+    <value>0.0.0.0:8088</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.ha.enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- NodeManager -->
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>1536</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>4</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.local-dirs</name>
+    <value>/hadoop/yarn/local</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.log-dirs</name>
+    <value>/hadoop/yarn/logs</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.webapp.address</name>
+    <value>0.0.0.0:8042</value>
+  </property>
+
+  <!--
+    Scheduler: allocations de memoria. El árbol de colas (root.default) y
+    maximum-am-resource-percent viven en capacity-scheduler.xml.
+  -->
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>128</value>
+  </property>
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>1536</value>
+  </property>
+
+  <!--
+    Checks de memoria: desactivados en el laboratorio para que las JVM no
+    maten contenedores por overhead. Para practicar incidentes de recursos
+    actívalos (docs/operations.md §drills).
+  -->
+  <property>
+    <name>yarn.nodemanager.pmem-check-enabled</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Agregación de logs en HDFS: habilita `yarn logs -applicationId` -->
+  <property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.remote-app-log-dir</name>
+    <value>/var/log/hadoop-yarn/apps</value>
+  </property>
+  <property>
+    <name>yarn.log-aggregation.retain-seconds</name>
+    <value>604800</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.env-whitelist</name>
+    <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
+  </property>
+  <property>
+    <name>yarn.application.classpath</name>
+    <value>
+      $HADOOP_CONF_DIR,
+      $HADOOP_COMMON_HOME/share/hadoop/common/*,
+      $HADOOP_COMMON_HOME/share/hadoop/common/lib/*,
+      $HADOOP_HDFS_HOME/share/hadoop/hdfs/*,
+      $HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*,
+      $HADOOP_YARN_HOME/share/hadoop/yarn/*,
+      $HADOOP_YARN_HOME/share/hadoop/yarn/lib/*
+    </value>
+  </property>
+</configuration>
