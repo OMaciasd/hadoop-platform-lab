@@ -1,0 +1,21 @@
+# =====================================================================
+# hadoop-platform-lab — Dockerfile.exporter
+#
+# Exportador JMX -> Prometheus del propio laboratorio (stdlib de Python,
+# sin dependencias de terceros). Convierte el /jmx en JSON de Hadoop a
+# formato Prometheus bajo demanda en GET /metrics (ver docker/exporter.py).
+# =====================================================================
+FROM python:3.13-alpine
+
+WORKDIR /app
+COPY exporter.py /app/exporter.py
+
+RUN adduser -D -u 1000 exporter && chown -R exporter /app
+USER exporter
+
+EXPOSE 9871
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:9871/health || exit 1
+
+CMD ["python3", "/app/exporter.py", "--port", "9871"]

@@ -9,7 +9,7 @@
 
 | Componente | Origen | Tecnología / contenedor | Puerto | Red | Volumen | Función en el lab | Clase | Riesgo | Estrategia |
 |---|---|---|---|---|---|---|---|---|---|
-| Prometheus | `gcp-architecture-lab` | `prom/prometheus:v2.53.0` / `gcp-prometheus` | 9091 | `gcp-arch-lab_default` 172.27/16 | bind `monitoring/prometheus.yml` | scrapear métricas JMX de HDFS/YARN | **INTEGRABLE** | bajo (añadir job = redeploy de ese stack) | provisto `observability/prometheus/hadoop-scrape-job.yml`; **requiere editar `gcp-architecture-lab` → no ejecutado** |
+| Prometheus | `gcp-architecture-lab` | `prom/prometheus:v2.53.0` / `gcp-prometheus` | 9091 | `gcp-arch-lab_default` 172.27/16 | bind `monitoring/prometheus.yml` | scrapear el exportador del lab (`:9871/metrics`, formato Prometheus) | **INTEGRABLE** | bajo (añadir job = redeploy de ese stack) | provisto `observability/prometheus/hadoop-scrape-job.yml`; **requiere editar `gcp-architecture-lab` → no ejecutado** |
 | Grafana | `gcp-architecture-lab` | `grafana/grafana:11.1.0` / `gcp-grafana` | 3001 | 172.27/16 | volumen `gcp-arch-lab_grafana-data` | dashboards de Hadoop | **INTEGRABLE** | bajo | dashboard provisto `observability/grafana/hadoop-platform.json` para importar; **no ejecutado** |
 | Spark standalone | `azure-data-engineering-lab` | `de-spark:3.5.3` master+worker | 7077, 8081, 18080 | `data-eng-lab_default` 172.24/16 | `spark-logs`, `./data` | validar su salud como servicio vecino; **no se replica** | **INTEGRABLE** (solo lectura) | nulo (GET a su UI) | healthcheck de solo lectura en `validate.py` (`spark_standalone`); el lab usa Spark **sobre YARN** en vez de un segundo standalone |
 | Airflow | `azure-data-engineering-lab` | `de-airflow:2.10.4` | 8080 | 172.24/16 | `airflow-logs-volume` | candidato a ejecutar el loop periódico de validación | **INTEGRABLE** | medio (despliegue de DAG en repo ajeno) | descrito en §3; **no ejecutado**; el loop se corre desde el host/cron |
@@ -19,7 +19,7 @@
 | MongoDB | `pp2` (legado) | `mongo:7.0` | — | — | `pp2_mongodb_data` | — | **FALTANTE** (inactive) | nulo | fuera de alcance |
 | Kind / Kubernetes | `platformops` | `kindest/node:v1.31.2` | 43899 | `kind` 172.18/16 | local-path-storage | — | **AISLADO** | alto (clúster ajeno, 1 deploy en CrashLoopBackOff) | no se usa; ver `architecture.md` §10 |
 | Docker default net + datos | `~/projects/hadoop-lab` | restos NN/DN de 2025-10-02 | — | `docker_default` 172.19/16 | bind `./data` | — | **AISLADO** | medio (permisos root, estado huérfano) | **no se elimina ni se reutiliza**; clúster nuevo usa volúmenes propios |
-| Puertos / subnets libres | sistema | — | 8020/8042/8043/8088/9864/9865/9870 | `hadoop_lab` 172.28/16 (nueva) | — | base del lab | **REUTILIZABLE** | nulo | verificado con `ss` y `docker network ls` antes de asignar |
+| Puertos / subnets libres | sistema | — | 8020/8042/8043/8088/9864/9865/9870/9871 | `hadoop_lab` 172.28/16 (nueva) | — | base del lab | **REUTILIZABLE** | nulo | verificado con `ss` y `docker network ls` antes de asignar |
 | Java 17, Python 3.12, curl/jq, gh | host | paquetes del sistema | — | — | — | ejecución de scripts y del cliente | **REUTILIZABLE** | nulo | uso directo, sin instalar nada |
 | Imagen `apache/hadoop:3.4.3` | Docker Hub | nueva descarga | — | — | — | base del clúster | **FALTANTE** → creada | nulo | única descarga grande necesaria (ya en caché local) |
 
@@ -34,22 +34,27 @@ El encargo prohíbe modificar repositorios ajenos sin explicarlo primero.
 Las dos integraciones pendientes requerirían:
 
 1. **Prometheus** — editar
-   `~/projects/gcp-architecture-lab/monitoring/prometheus.yml`, añadiendo:
+   `~/projects/gcp-architecture-lab/monitoring/prometheus.yml` añadiendo el job
+   provisto en `observability/prometheus/hadoop-scrape-job.yml`:
 
    ```yaml
    - job_name: hadoop-platform-lab
+     scrape_interval: 30s
+     metrics_path: /metrics
      static_configs:
-       - targets: ['namenode:9870', 'resourcemanager:8088',
-                   'datanode1:9864', 'datanode2:9864']
-     metrics_path: /jmx
+       - targets: ['host.docker.internal:9871']   # o <IP-de-WSL>:9871
+         labels: { lab: hadoop-platform-lab }
    ```
 
-   y conectar la red `gcp-arch-lab_default` con `hadoop_lab`
-   (`docker network connect`) o publicar los puertos hacia el host y apuntar a
-   `host.docker.internal`/IP del host. **Impacto:** redeploy del stack de
-   observabilidad de ese laboratorio; si su config rompe, se pierde su
-   scraping actual. **Alternativa menos intrusiva:** exponer los blancos en el
-   host (ya publicados) y usar un `static_configs` con la IP del host WSL.
+   El blanco es el **exportador del propio lab (`hl-metrics`, :9871)**, que ya
+   convierte el `/jmx` JSON de Hadoop a formato Prometheus: no hace falta
+   conectar redes (`docker network connect`) ni añadir `extra_hosts` dentro de
+   este laboratorio. Solo el contenedor de Prometheus vecino necesita llegar a
+   ese puerto por el host (`host.docker.internal` + `host-gateway`, o la IP de
+   WSL).
+   **Impacto:** redeploy del stack de observabilidad de ese laboratorio; si su
+   config rompe, se pierde su scraping actual. **Alternativa menos
+   intrusiva:** no tocarlo y leer `curl localhost:9871/metrics` a mano.
 
 2. **Grafana** — importar un dashboard (API o UI) en la instancia de ese
    proyecto. **Impacto:** solo adición; riesgo bajo, pero sigue siendo un

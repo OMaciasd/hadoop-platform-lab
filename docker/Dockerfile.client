@@ -1,0 +1,38 @@
+# Dockerfile.client — cliente HDFS/YARN + Spark sobre YARN
+#
+# Base: la misma imagen apache/hadoop del clúster (misma versión, misma config
+# de red). Añade la distribución oficial de Spark para ejecutar trabajos en
+# YARN (no se levanta un segundo Spark standalone: ya existe el de
+# azure-data-engineering-lab, ver docs/integration.md).
+FROM apache/hadoop:3.4.3
+
+USER root
+
+ARG SPARK_VERSION=3.5.3
+ARG SPARK_DIST=spark-3.5.3-bin-hadoop3
+ARG SPARK_SHA512=3b041e538282c15ad3b0ab2f05d558e1be2d16e047c2a98ca9c08176c4a50e7101bd2199aec97a66fdabf4b3f490c2c1cefd547bbe35a1b3e3143e066948ee6d
+
+SHELL ["/bin/bash", "-c"]
+RUN set -euo pipefail; \
+    curl -fsSL -o /tmp/spark.tgz \
+      "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_DIST}.tgz"; \
+    echo "${SPARK_SHA512}  /tmp/spark.tgz" | sha512sum -c -; \
+    tar -xzf /tmp/spark.tgz -C /opt; \
+    mv "/opt/${SPARK_DIST}" /opt/spark; \
+    rm -f /tmp/spark.tgz; \
+    chown -R hadoop:users /opt/spark
+
+# Directorios de trabajo del cliente (bind mounts desde compose.yaml)
+RUN mkdir -p /hadoop/dfs/name /hadoop/dfs/data /hadoop/yarn/local /hadoop/yarn/logs /hadoop/logs \
+    && chown -R hadoop:users /hadoop
+
+USER hadoop
+
+# SPARK_CONF_DIR no se exporta: su extensión "conf" hace que el
+# envtoconf.py de la imagen base intente escribir sobre el mount de solo
+# lectura y reinicie el contenedor en bucle.
+ENV SPARK_HOME=/opt/spark \
+    PATH=/opt/spark/bin:/opt/hadoop/bin:$PATH
+
+WORKDIR /home/hadoop
+CMD ["sleep", "infinity"]

@@ -1,0 +1,379 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Instancia existente de gcp-architecture-lab (http://prometheus:9090)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "title": "Hadoop Platform Lab",
+  "uid": "hadoop-platform-lab",
+  "tags": ["hadoop", "hdfs", "yarn", "lab"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "hide": 0
+      },
+      {
+        "name": "component",
+        "label": "componente",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": "label_values(hadoop_lab_scrape_success, component)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "DataNodes vivos",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_numlivedatanodes{bean=\"fsnamesystem\"}) or vector(0)",
+          "legendFormat": "vivos",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "DataNodes caídos",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_numdeaddatanodes{bean=\"fsnamesystem\"}) or vector(0)",
+          "legendFormat": "caídos",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Capacidad HDFS usada",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * max(hadoop_lab_capacityused{bean=\"fsnamesystem\"}) / max(hadoop_lab_capacitytotal{bean=\"fsnamesystem\"})",
+          "legendFormat": "% usado",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Componentes scrapeadas",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hadoop_lab_scrape_targets_up / on() hadoop_lab_scrape_targets_total * 100",
+          "legendFormat": "disponibilidad JMX",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 84 },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Aplicaciones YARN en ejecución",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_appsrunning{bean=\"queuemetrics\"}) or vector(0)",
+          "legendFormat": "apps",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Contenedores en ejecución",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(hadoop_lab_containersrunning) or vector(0)",
+          "legendFormat": "contenedores",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "HDFS: capacidad usada / total (bytes)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_capacityused{bean=\"fsnamesystem\"})",
+          "legendFormat": "usada"
+        },
+        {
+          "refId": "B",
+          "expr": "max(hadoop_lab_capacitytotal{bean=\"fsnamesystem\"})",
+          "legendFormat": "total"
+        },
+        {
+          "refId": "C",
+          "expr": "max(hadoop_lab_capacityremaining{bean=\"fsnamesystem\"})",
+          "legendFormat": "restante"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10 } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "HDFS: bloques y ficheros",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_blockstotal{bean=\"fsnamesystem\"})",
+          "legendFormat": "bloques"
+        },
+        {
+          "refId": "B",
+          "expr": "max(hadoop_lab_filestotal{bean=\"fsnamesystem\"})",
+          "legendFormat": "ficheros"
+        },
+        {
+          "refId": "C",
+          "expr": "max(hadoop_lab_underreplicatedblocks{bean=\"fsnamesystem\"}) or vector(0)",
+          "legendFormat": "sub-replicados"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "YARN: aplicaciones (running / pending / failed)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_appsrunning{bean=\"queuemetrics\"})",
+          "legendFormat": "running"
+        },
+        {
+          "refId": "B",
+          "expr": "max(hadoop_lab_appspending{bean=\"queuemetrics\"})",
+          "legendFormat": "pending"
+        },
+        {
+          "refId": "C",
+          "expr": "max(hadoop_lab_appsfailed{bean=\"queuemetrics\"})",
+          "legendFormat": "failed"
+        },
+        {
+          "refId": "D",
+          "expr": "max(hadoop_lab_appskilled{bean=\"queuemetrics\"})",
+          "legendFormat": "killed"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "YARN: memoria MB (available / allocated / pending)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(hadoop_lab_availablemb{bean=\"queuemetrics\"})",
+          "legendFormat": "disponible"
+        },
+        {
+          "refId": "B",
+          "expr": "max(hadoop_lab_allocatedmb{bean=\"queuemetrics\"})",
+          "legendFormat": "asignado"
+        },
+        {
+          "refId": "C",
+          "expr": "max(hadoop_lab_pendingmb{bean=\"queuemetrics\"})",
+          "legendFormat": "pendiente"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Mbytes" }, "overrides": [] }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "JVM: heap usado por componente (MB)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hadoop_lab_memheapusedm{component=~\"$component\"}",
+          "legendFormat": "{{component}}"
+        },
+        {
+          "refId": "B",
+          "expr": "hadoop_lab_memheapmaxm{component=~\"$component\"}",
+          "legendFormat": "{{component}} máx"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Mbytes" }, "overrides": [] }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Disponibilidad JMX por componente",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hadoop_lab_scrape_success",
+          "legendFormat": "{{component}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

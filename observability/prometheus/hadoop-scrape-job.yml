@@ -1,0 +1,28 @@
+# =====================================================================
+# Job de scraping del exportador de Hadoop Platform Lab — NO APLICADO
+#
+# Este fichero es un recorte listo para pegar en la configuración del
+# Prometheus que YA existe (gcp-architecture-lab). No se aplica porque
+# exige editar su repositorio, redeployar su stack y arrastrar su
+# configuración actual: ver docs/integration.md §2.
+#
+# Contexto: Hadoop expone sus métricas como JSON en /jmx (no en formato
+# Prometheus). Este laboratorio publica hl-metrics en :9871, que convierte
+# ese JSON a formato Prometheus en /metrics. Por tanto el job apunta a
+# :9871 y NO a /jmx de Hadoop.
+# =====================================================================
+- job_name: hadoop-platform-lab
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+        # El contenedor del Prometheus vecino está en otra red
+        # (gcp-arch-lab_default), por eso se llega por el host.
+        # Dos opciones:
+        #   1) host.docker.internal — funciona si su compose declara
+        #      extra_hosts: ["host.docker.internal:host-gateway"]
+        #   2) la IP de salida de WSL: hostname -I | awk '{print $1}'
+        - host.docker.internal:9871
+      labels:
+        lab: hadoop-platform-lab

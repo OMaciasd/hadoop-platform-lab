@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  mapred-site.xml — hadoop-platform-lab
+  MapReduce sobre YARN (shuffle del aux-service mapreduce_shuffle).
+  Se usa para `hadoop jar ... examples.jar` y como base de Spark on YARN.
+-->
+<configuration>
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+  <property>
+    <name>mapreduce.map.memory.mb</name>
+    <value>512</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.memory.mb</name>
+    <value>512</value>
+  </property>
+  <property>
+    <name>yarn.app.mapreduce.am.resource.mb</name>
+    <value>512</value>
+  </property>
+</configuration>
